@@ -4,6 +4,7 @@ __pycache__
 build/
 dist/
 *.egg-info/
+apex/
 
 # binaries
 *.so
@@ -21,3 +22,5 @@ logs
 
 # Data folder
 bookcorpus_data/
+venv/
+.idea/
