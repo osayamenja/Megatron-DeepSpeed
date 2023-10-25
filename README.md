@@ -1,3 +1,24 @@
+# Training GPT-3 MoE
+This repo is for ongoing research and experiments on training MoE models from Megatron-Deepspeed. 
+Follow the Steps below to run the scripts.
+
+# Note
+We assume you are using Linux.
+
+## Setup
+- Create a `venv`. **This is necessary for downloading apex.**
+- Go to [NVIDIA/apex](https://github.com/NVIDIA/apex#linux) and follow those instructions to download apex.
+- Check the [requirements.txt](./requirements.txt) and install all missing packages from pip **except `apex`, the first one**
+
+## Run
+- Download the datasets by running this [script](./dataset/download_books.sh) in the dataset directory.
+- The 125M and 350M MoE scripts are the most up to date and have been tested. 
+- You can run either of `ds_pretrain_gpt_350M_MoE128.sh` or `ds_pretrain_gpt_125M_MoE64.sh`.
+- If you want to run larger models, just update the needed scripts such that the data file paths match either of the above.
+- Ensure to verify `NUM_GPUS` and add any command line switches of interest. See Deepspeed.ai [documentation](https://www.deepspeed.ai/tutorials/mixture-of-experts-nlg/) for more details.
+
+Below is the original README from Megatron-Deepspeed.
+------
 ## Latest News
 * [2023/07] Synced with [upstream](https://github.com/NVIDIA/Megatron-LM) over 1k commits, see [rebase folder for more details](https://github.com/microsoft/Megatron-DeepSpeed/tree/main/examples_deepspeed/rebase) in terms of features and updated performance.
 
