@@ -1,5 +1,5 @@
 #!/bin/bash
-DIR=`pwd`
+DIR=$(pwd)
 ###############################################################################
 ### Main configs
 ## GPT-3 models use 2K sequence length/context window
@@ -92,7 +92,7 @@ TRAIN_TOKENS=300000000000
 ## above, and techniques like curriculum learning has less token in some steps,
 ## so we just set this config large enough to make sure we have enough
 ## processed data and don't terminate by TRAIN_ITERS.
-TRAIN_ITERS=$(( ${TRAIN_TOKENS} * 3 / ${GLOBAL_BATCH_SIZE} / ${SEQ_LEN} ))
+TRAIN_ITERS=$(( TRAIN_TOKENS * 3 / GLOBAL_BATCH_SIZE / SEQ_LEN ))
 
 ## Another termination condition in minutes. Set it large enough to avoid
 ## undesired early termination.
@@ -119,14 +119,20 @@ MP_SIZE=1
 ## Currently we don't support PP for MoE. To disable PP, set PP_SIZE
 ## to 1 and use the "--no-pipeline-parallel" arg.
 PP_SIZE=1
-NUM_GPUS=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
+
+# Below misbehaves for single node
+# NUM_GPUS=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
+
+NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 NUM_GPUS_PERNODE=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-NUM_NODE=$(( ${NUM_GPUS} / ${NUM_GPUS_PERNODE} ))
+NUM_NODE=$(( NUM_GPUS / NUM_GPUS_PERNODE ))
 ###############################################################################
 ### MoE configs
 ## Number of experts. EP_SIZE 1 means dense model without MoE
 # EP_SIZE=1
-EP_SIZE=64
+
+# EP_SIZE = NUM_GPUS or 2*NUM_GPUS is recommended
+EP_SIZE=NUM_GPUS
 
 if [[ $EP_SIZE -gt $NUM_GPUS ]]; then
     EP_PARALLEL_SIZE=$NUM_GPUS
@@ -241,19 +247,22 @@ if [ "${USE_INTERNAL_DATA}" = "true" ]; then
     0.00208 ${NIH} 0.13017 ${CC2020} 0.09446 ${PCC} 0.15652 ${CC2021} \
     0.01359 ${ARX} 0.01588 ${GIT}"
 else
-    VOCAB_PATH=/data/the_pile_public_merged_nopreprocessing/gpt2-vocab.json
-    MERGE_PATH=/data/the_pile_public_merged_nopreprocessing/gpt2-merges.txt
-    # Public the Pile dataset, can be downloaded at https://mystic.the-eye.eu/public/AI/pile_neox/
-    # For cluster Azure-EastUS-V100-32GB-4, Lab-RR1-V100
-    DATA_PATH=/vc_data_blob/users/conglli/the_pile_public_merged_nopreprocessing/pile_text_document
-    # For cluster Azure-WestUS3-A100
-    # DATA_PATH=/blob/data/the_pile_public_merged_nopreprocessing/pile_text_document
+    DATASET_PATH="./../../dataset"
+    VOCAB_PATH="${DATASET_PATH}/gpt2-vocab.json"
+    MERGE_PATH="${DATASET_PATH}/gpt2-merges.txt"
+
+    # ensure to run download_books.sh to set up the datasets
+    TRAIN_DATA_PATH="${DATASET_PATH}/pile_train_text_document"
+    VALID_DATA_PATH="${DATASET_PATH}/pile_val_text_document"
+    TEST_DATA_PATH="${DATASET_PATH}/pile_test_text_document"
 fi
 ###############################################################################
 data_options=" \
          --vocab-file ${VOCAB_PATH} \
          --merge-file ${MERGE_PATH} \
-         --data-path ${DATA_PATH} \
+         --train-data-path ${TRAIN_DATA_PATH} \
+         --valid-data-path ${VALID_DATA_PATH} \
+         --test-data-path ${TEST_DATA_PATH} \
          --data-impl mmap"
         
 megatron_options=" \
@@ -329,7 +338,7 @@ sed "s/CONFIG_BATCH_SIZE/${GLOBAL_BATCH_SIZE}/" ${template_json} \
     | sed "s/CONFIG_CL_MIN/${CL_START_SEQLEN}/" \
     | sed "s/CONFIG_CL_MAX/${SEQ_LEN}/" \
     | sed "s/CONFIG_CL_DURATION/${CL_STEP}/" \
-	  > ${config_json}
+	  > "${config_json}"
 
 deepspeed_options=" \
 		    --deepspeed \
@@ -355,9 +364,9 @@ ITERATION_FILE_2="$CHECKPOINT_PATH/latest"
 ITERATION=0
 for (( node = 0; node <= NUM_NODE-1; node++ ))
 do
-    if $(ssh -q worker-"$node" "test -f \"$ITERATION_FILE\""); then
-        LOCAL_ITERATION=$(ssh -q worker-"$node" cat $ITERATION_FILE)
-        ITERATION=$(( ${LOCAL_ITERATION} > ${ITERATION} ? ${LOCAL_ITERATION} :  ${ITERATION} ))
+    if ssh -q worker-"$node" "test -f \"$ITERATION_FILE\""; then
+        LOCAL_ITERATION=$(ssh -q worker-"$node" cat "$ITERATION_FILE")
+        ITERATION=$(( LOCAL_ITERATION > ITERATION ? LOCAL_ITERATION :  ITERATION ))
     fi
 done
 if [[ $ITERATION -gt 0 ]]; then
@@ -366,7 +375,9 @@ if [[ $ITERATION -gt 0 ]]; then
     ds_ssh "echo $ITERATION_2 > $ITERATION_FILE_2"
 fi
 
-run_cmd="deepspeed ${DIR}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} &> ${OUTPUT_BASEPATH}/log/${NAME}_${host}_${current_time}.log"
-echo ${run_cmd}
-eval ${run_cmd}
+# Run below if you want the output in a log file
+# run_cmd="deepspeed ${DIR}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} &> ${OUTPUT_BASEPATH}/log/${NAME}_${host}_${current_time}.log"
+run_cmd="deepspeed ${DIR}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}"
+echo "${run_cmd}"
+eval "${run_cmd}"
 set +x
