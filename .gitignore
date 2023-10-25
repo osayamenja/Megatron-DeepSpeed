@@ -20,7 +20,11 @@ config.json
 slurm*
 logs
 
-# Data folder
-bookcorpus_data/
+# Dataset folder
+# Track scripts and README files
+dataset/
+!dataset/*.sh
+!dataset/*.MD
+
 venv/
 .idea/

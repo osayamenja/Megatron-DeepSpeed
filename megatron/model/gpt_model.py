@@ -24,17 +24,22 @@ try:
 except ImportError:
     MixedFusedRMSNorm = None
 
-from deepspeed.checkpoint import (
-    VOCABULARY_PARAMETER_PATTERNS,
-    PIPELINE_REPLICATED_PARAMETER_PATTERNS,
-    TP_REPLICATED_PARAMETER_PATTERNS,
-    PARAMETER_WITH_ROW_PARALLELISM_PATTERNS,
-)
+# # Fix bug: cannot import name 'TP_REPLICATED_PARAMETER_PATTERNS' from 'deepspeed.checkpoint
+# from deepspeed.checkpoint import (
+#     VOCABULARY_PARAMETER_PATTERNS,
+#     PIPELINE_REPLICATED_PARAMETER_PATTERNS,
+#     TP_REPLICATED_PARAMETER_PATTERNS,
+#     PARAMETER_WITH_ROW_PARALLELISM_PATTERNS,
+# )
+
+VOCABULARY_PARAMETER_PATTERNS = 'vocabulary_parameter_patterns'
+PIPELINE_REPLICATED_PARAMETER_PATTERNS = 'pipeline_replicated_parameter_patterns'
+PARAMETER_TO_AVERAGE_PATTERNS = 'parameter_to_average_patterns'
+PARAMETER_WITH_ROW_PARALLELISM_PATTERNS = 'parameter_with_row_parallelism_patterns'
 
 def post_language_model_processing(lm_output, labels, logit_weights,
                                    parallel_output,
                                    fp16_lm_cross_entropy):
-
     # Output. Format [s b h]
     output = parallel_lm_logits(
         lm_output,
@@ -184,7 +189,7 @@ class GPTModel(MegatronModule):
         ]
 
         # Parameter slices that should be averaged not concatenated.
-        info[TP_REPLICATED_PARAMETER_PATTERNS] = [
+        info[PARAMETER_TO_AVERAGE_PATTERNS] = [
             r"tied_modules.embed.word_embeddings.norm.weight",
             r"tied_modules.embed.word_embeddings.norm.bias",
             r"tied_modules.embed.position_embeddings.weight",
@@ -350,7 +355,7 @@ class GPTModelPipe(PipelineModule,MegatronModule):
         ]
 
         # Parameter slices that should be averaged not concatenated.
-        info[TP_REPLICATED_PARAMETER_PATTERNS] = [
+        info[PARAMETER_TO_AVERAGE_PATTERNS] = [
             r"tied_modules.embed.word_embeddings.norm.weight",
             r"tied_modules.embed.word_embeddings.norm.bias",
             r"tied_modules.embed.position_embeddings.weight",
