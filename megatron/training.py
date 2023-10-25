@@ -1152,6 +1152,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         assert model[0].random_ltd_enabled()
         args.random_ltd_layer_num = model[0].random_ltd_scheduler.get_random_ltd_layer_num()
 
+    # Below emits telemetry visible in Nsight Systems or Compute.
     with torch.autograd.profiler.emit_nvtx():
         while iteration < args.train_iters and (args.train_tokens is None or args.consumed_train_tokens < args.train_tokens):
             itr_rng = nvtx.start_range(message="iteration_{}".format(iteration), color="orange")
