@@ -21,6 +21,7 @@ from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
 import deepspeed
 from deepspeed.moe.layer import MoE
 from deepspeed.accelerator import get_accelerator
+import nvtx
 
 try:
     from deepspeed.sequence.layer import DistributedAttention
@@ -1323,7 +1324,9 @@ class ParallelTransformerLayer(MegatronModule):
         if self.num_experts == 1:
             mlp_output, mlp_bias = self.mlp(layernorm_output)
         else:
+            rng = nvtx.start_range(message="moe_layer")
             mlp_output, moe_loss, _ = self.mlp(layernorm_output)
+            nvtx.end_range(rng)
 
         # Second residual connection.
         if self.apply_residual_connection_post_layernorm:
