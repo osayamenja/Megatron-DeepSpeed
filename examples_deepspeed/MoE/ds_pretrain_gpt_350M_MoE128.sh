@@ -119,7 +119,7 @@ MP_SIZE=1
 ## Currently we don't support PP for MoE. To disable PP, set PP_SIZE
 ## to 1 and use the "--no-pipeline-parallel" arg.
 PP_SIZE=1
-NUM_GPUS=64
+NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 ###############################################################################
 ### MoE configs
 ## Number of experts. EP_SIZE 1 means dense model without MoE
@@ -301,6 +301,7 @@ megatron_options=" \
         --log-timers-to-tensorboard \
         --log-batch-size-to-tensorboard \
         --log-validation-ppl-to-tensorboard \
+        --overlap-grad-reduce \
         --tensorboard-dir ${TENSORBOARD_DIR}"
 
 if [ "${ACTIVATION_CHECKPOINT}" = "true" ]; then
