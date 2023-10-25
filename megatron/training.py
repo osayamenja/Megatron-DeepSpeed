@@ -43,6 +43,7 @@ from megatron.core.pipeline_parallel import get_forward_backward_func
 from megatron.utils import report_memory, throughput_calculator, checkpoint_throughput_calculator
 from megatron.model.vision.knn_monitor import compute_feature_bank
 from megatron.arguments import core_transformer_config_from_args
+from megatron.model.distributed import OverlappingDistributedDataParallel as OverlappingLocalDDP
 
 import deepspeed
 from deepspeed.accelerator import get_accelerator
@@ -411,10 +412,16 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
                      for model_module in model]
 
         elif args.DDP_impl == 'local':
-            model = [LocalDDP(model_module,
-                              args.accumulate_allreduce_grads_in_fp32,
-                              args.use_contiguous_buffers_in_local_ddp)
-                     for model_module in model]
+            if args.overlap_grad_reduce:
+                model = [OverlappingLocalDDP(model_module,
+                                             mpu.get_data_parallel_group(),
+                                             args.accumulate_allreduce_grads_in_fp32)
+                         for model_module in model]
+            else:
+                model = [LocalDDP(model_module,
+                                  args.accumulate_allreduce_grads_in_fp32,
+                                  args.use_contiguous_buffers_in_local_ddp)
+                         for model_module in model]
             # broad cast params from data parallel src rank to other data parallel ranks
             if args.data_parallel_random_init:
                 for model_module in model:
@@ -1176,6 +1183,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                            opt_param_scheduler,
                            config)
             iteration += 1
+            nvtx.end_range(itr_rng)
             args.iteration = iteration
             new_samples = mpu.get_data_parallel_world_size() * \
                                            args.micro_batch_size * \
@@ -1272,7 +1280,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 torch.distributed.barrier()
                 print_datetime('exiting program at iteration {}'.format(iteration))
                 sys.exit()
-            nvtx.end_range(itr_rng)
     return iteration
 
 

@@ -11,6 +11,7 @@ from megatron import get_args
 from megatron.core import mpu
 from .module import MegatronModule
 from deepspeed.accelerator import get_accelerator
+from contextlib import contextmanager
 
 class MemoryBuffer:
 
@@ -38,7 +39,147 @@ class MemoryBuffer:
         buffer_tensor = buffer_tensor.view(shape)
         return buffer_tensor
 
+# Adopted from Megatron-LM: https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/distributed.py
+class Bucket:
+    """
+    Bucket to all-reduce gradients for a set of parameters asynchronously. Provides
+    functionality to register when params in the bucket have grads available, and
+    automatically launches an asynchronous all_reduce when all params in the bucket
+    have grads available.
+    """
 
+    def __init__(self, params, data, data_parallel_group):
+        # State for bookkeeping: params is the set of parameters this bucket is
+        # responsible for, params_with_grad is the set of parameters with grads
+        # available.
+        self.params = set(params)
+        self.params_with_grad = set()
+        self.data = data
+        self.data_parallel_group = data_parallel_group
+
+        self.one_over_data_parallel_size = 1.0 / \
+                                           torch.distributed.get_world_size(group=data_parallel_group)
+
+        self.reset()
+
+    def reset(self):
+        self.params_with_grad = set()
+        self.allreduce_handle = None
+        self.allreduce_issued = False
+
+    def all_reduce(self):
+        assert self.allreduce_handle is None, 'allreduce handle is not None'
+        assert not self.allreduce_issued, 'allreduce is already issued'
+        self.data.mul_(self.one_over_data_parallel_size)
+        self.allreduce_handle = torch.distributed.all_reduce(
+            self.data, group=self.data_parallel_group,
+            async_op=True)
+        self.allreduce_issued = True
+
+    def set(self, param):
+        assert param in self.params, 'param is not in the bucket'
+        assert param not in self.params_with_grad, 'cannot set grad twice'
+        self.params_with_grad.add(param)
+        if len(self.params_with_grad) == len(self.params):
+            self.all_reduce()
+
+    def done(self):
+        assert self.allreduce_issued, 'allreduce is not issued for this bucket'
+        if self.allreduce_handle is not None:
+            self.allreduce_handle.wait()
+        self.addreduce_handle = None
+        self.allreduce_issued = False
+
+class GradBuffer:
+    """
+    Buffer for gradients to ensure that gradients for different parameters in the
+    model are contiguous. Interally, gradients are organized into buckets with
+    at most bucket_size parameters each.
+    """
+
+    def __init__(self, params, dtype, data_parallel_group,
+                 bucket_size, param_to_name):
+
+        self.data = None
+        self.buckets = []
+        self.param_to_bucket = {}
+
+        self.is_last_microbatch = False
+
+        # Check that params are unique.
+        unique_params = set()
+        for param in params:
+            assert param not in unique_params
+            unique_params.add(param)
+        del unique_params
+
+        # Count number of elements in the parameters and allocate memory.
+        numel = 0
+        for param in params:
+            numel += param.data.nelement()
+        # Pad so size is divisible by the data parallel size.
+        # This makes things easier for distributed optimizer.
+        data_parallel_size = torch.distributed.get_world_size(
+            group=data_parallel_group)
+        numel = int(math.ceil(numel / data_parallel_size)) * data_parallel_size
+        self.data = torch.empty(numel, dtype=dtype,
+                                device=torch.cuda.current_device(),
+                                requires_grad=False)
+
+        # Map the grads to the buffer and bucket them.
+        def set_bucket_(bucket_params, data_start_index, data_end_index):
+            bucket_data = self.data[data_start_index:data_end_index]
+            bucket = Bucket(bucket_params, bucket_data, data_parallel_group)
+            self.buckets.append(bucket)
+            for bucket_param in bucket_params:
+                self.param_to_bucket[bucket_param] = bucket
+
+        data_start_index = 0
+        bucket_data_start_index = data_start_index
+        bucket_params = set()
+        bucket_id = 0
+        for param in params:
+            this_numel = param.data.nelement()
+            data_end_index = data_start_index + this_numel
+            param.main_grad = self.data[data_start_index:data_end_index].view(param.data.shape)
+            bucket_params.add(param)
+
+            # If we have enough elements already, form a new buffer.
+            if (data_end_index - bucket_data_start_index) >= bucket_size:
+                set_bucket_(bucket_params, bucket_data_start_index, data_end_index)
+                bucket_data_start_index = data_end_index
+                bucket_params = set()
+            data_start_index = data_end_index
+
+        # Add remaining params to a new bucket.
+        if len(bucket_params) > 0:
+            set_bucket_(bucket_params, bucket_data_start_index, data_end_index)
+
+        # Print buckets.
+        if torch.distributed.get_rank() == 0:
+            print('> buckets for gradient all-reduce:')
+            for index, bucket in enumerate(self.buckets):
+                print('    params for bucket {}'.format(index + 1))
+                numel = 0
+                for param in bucket.params:
+                    numel += param.data.nelement()
+                    print('      {}'.format(param_to_name[param]))
+                print('     total number of elements: {}'.format(numel))
+
+    def reset(self):
+        # Set the data to zero and reset all the buckets.
+        self.data.zero_()
+        for bucket in self.buckets:
+            bucket.reset()
+        self.is_last_microbatch = False
+
+    def mark_grad_as_done(self, param):
+        # Note that when the number of microbatches is greater than 1,
+        # we only want to register grads when processing the last microbatch.
+        # This method is called from the backward hook.
+        if self.is_last_microbatch:
+            bucket = self.param_to_bucket[param]
+            bucket.set(param)
 
 class DistributedDataParallelBase(MegatronModule, ABC):
     """Abstract class for DDP."""
@@ -70,7 +211,95 @@ class DistributedDataParallelBase(MegatronModule, ABC):
     def load_state_dict(self, state_dict, strict=True):
         self.module.load_state_dict(state_dict, strict=strict)
 
+class OverlappingDistributedDataParallel(DistributedDataParallelBase):
+    """
+    DDP wrapper that overlaps all-reduce with computation by breaking up
+    full model's gradients into smaller buckets and running all-reduce on
+    each bucket asynchronously.
+    """
 
+    def __init__(self, module, data_parallel_group, grads_in_fp32):
+        super(OverlappingDistributedDataParallel, self).__init__(module)
+
+        bucket_size = 40000000
+
+        self.module = module
+        self.grad_dtype_to_grad_buffer = {}
+        self.param_to_grad_buffer = {}
+
+        # Group parameters by their gradient type.
+        grad_dtype_to_param = {}
+        param_to_name = {}
+        for name, param in self.module.named_parameters():
+            if param.requires_grad:
+                param.grad_added_to_main_grad = False
+                param_to_name[param] = name
+                dtype = torch.float if grads_in_fp32 else param.dtype
+                params = grad_dtype_to_param.get(dtype, [])
+                params.append(param)
+                grad_dtype_to_param[dtype] = params
+
+        # Allocate the grad buffers and map the grads. Make sure parameters are reversed
+        # so they are in approximately in the order of backprop.
+        for dtype, params in grad_dtype_to_param.items():
+            params.reverse()
+            self.grad_dtype_to_grad_buffer[dtype] = GradBuffer(
+                params, dtype, data_parallel_group,
+                bucket_size, param_to_name)
+            for param in params:
+                self.param_to_grad_buffer[param] = self.grad_dtype_to_grad_buffer[dtype]
+
+        # Register backward hook.
+        def _make_param_hook(self, param, param_to_grad_buffer):
+            """Create the all-reduce hook for backprop."""
+
+            # Hook used for back-prop.
+            def param_hook(*unused):
+                if param.requires_grad:
+                    # Make sure no none values are returned.
+                    assert param.grad is not None
+                    if not param.grad_added_to_main_grad:
+                        param.main_grad.add_(param.grad.data)
+                    param.grad = None
+                    param_to_grad_buffer[param].mark_grad_as_done(param)
+
+            return param_hook
+
+        # Accumulation function for the gradients. These need to be stored so they
+        # don't go out of scope.
+        self.grad_accs = []
+        for param in self.module.parameters():
+            if param.requires_grad:
+                # Expand so we get access to grad_fn.
+                param_tmp = param.expand_as(param)
+                # Get the gradient accumulator function.
+                grad_acc = param_tmp.grad_fn.next_functions[0][0]
+                grad_acc.register_hook(self._make_param_hook(
+                    param, self.param_to_grad_buffer))
+                self.grad_accs.append(grad_acc)
+
+    @contextmanager
+    def no_sync(self):
+        for grad_buffer in self.grad_dtype_to_grad_buffer.values():
+            grad_buffer.is_last_microbatch = False
+        try:
+            yield
+        finally:
+            for grad_buffer in self.grad_dtype_to_grad_buffer.values():
+                grad_buffer.is_last_microbatch = True
+
+    def zero_grad_buffer(self):
+        for param in self.module.parameters():
+            if param.requires_grad:
+                param.grad_added_to_main_grad = False
+        for grad_buffer in self.grad_dtype_to_grad_buffer.values():
+            grad_buffer.reset()
+
+    def allreduce_gradients(self):
+        for grad_buffer in self.grad_dtype_to_grad_buffer.values():
+            for bucket in grad_buffer.buckets:
+                bucket.done()
+                
 
 class DistributedDataParallel(DistributedDataParallelBase):
     """DDP with contiguous buffers options to storre and accumulate gradients.

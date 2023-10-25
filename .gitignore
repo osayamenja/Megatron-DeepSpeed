@@ -11,6 +11,7 @@ apex/
 
 # tmp files
 *.swp
+examples_deepspeed/MoE/output
 
 # AML workspace config file
 config.json
