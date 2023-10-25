@@ -1,4 +1,4 @@
-# Run the scripts below to setup dataset 
+# Run the scripts below to setup dataset
 
 bash download_books.sh
 
