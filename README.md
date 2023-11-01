@@ -8,7 +8,7 @@ We assume you are using Linux.
 ## Setup
 - Create a `venv`. **This is necessary for downloading apex.**
 - Go to [NVIDIA/apex](https://github.com/NVIDIA/apex#linux) and follow those instructions to download apex.
-- Check the [requirements.txt](./requirements.txt) and install all missing packages from pip **except `apex`, the first one**
+- Run `pip install -r ./requirements.txt`
 
 ## Run
 - Download the datasets by running this [script](./dataset/download_books.sh) in the dataset directory.

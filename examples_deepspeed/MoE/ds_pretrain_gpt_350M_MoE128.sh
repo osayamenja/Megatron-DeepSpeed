@@ -96,7 +96,8 @@ TRAIN_ITERS=$(( TRAIN_TOKENS * 3 / GLOBAL_BATCH_SIZE / SEQ_LEN ))
 
 ## Another termination condition in minutes. Set it large enough to avoid
 ## undesired early termination.
-EXIT_DURATION=30000000
+#EXIT_DURATION=30000000
+EXIT_DURATION=480
 ###############################################################################
 ### LR configs
 ## LR warmup and decay duration, this token-based config is preferable since
