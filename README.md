@@ -9,6 +9,7 @@ We assume you are using Linux.
 - Create a `venv`. **This is necessary for downloading apex.**
 - Go to [NVIDIA/apex](https://github.com/NVIDIA/apex#linux) and follow those instructions to download apex.
 - Run `pip install -r ./requirements.txt`
+- Due to this [bug](https://github.com/Dao-AILab/flash-attention/issues/453), run ` pip install flash-attn --no-build-isolation`
 
 ## Run
 - Download the datasets by running this [script](./dataset/download_books.sh) in the dataset directory.
