@@ -16,7 +16,7 @@ fi
 #fi
 
 # needed for extraction
-sudo apt install zstd
+apt install zstd
 
 # monology/pile-uncopyrighted from Hugging Face.
 # Below downloads, extracts and preprocesses the train, test and eval datasets
@@ -46,13 +46,12 @@ for i in "${!dataset_names[@]}"; do
     run_cmd="unzstd ${dataset_names[$i]}.zst"
     echo "${run_cmd}"
     eval "${run_cmd}"
-    rm "${dataset_names[$i]}.zst" # remove unneeded file
   fi
 
   printf "preprocessing...\n"
   # get number of CPU cores
   WORKERS=$(< /proc/cpuinfo grep -c processor)
-  run_cmd="python3 ./../../tools/preprocess_data.py \
+  run_cmd="python3 ./../tools/preprocess_data.py \
        --input ${dataset_names[$i]} \
        --output-prefix ${output_file_names[$i]} \
        --vocab-file ${DIR}/gpt2-vocab.json \
@@ -62,4 +61,5 @@ for i in "${!dataset_names[@]}"; do
        --workers ${WORKERS} \
        --append-eod"
   eval "${run_cmd}"
+  rm "${dataset_names[$i]}.zst" # remove unneeded file
 done

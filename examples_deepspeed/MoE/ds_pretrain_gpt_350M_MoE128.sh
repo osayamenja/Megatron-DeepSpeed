@@ -97,7 +97,7 @@ TRAIN_ITERS=$(( TRAIN_TOKENS * 3 / GLOBAL_BATCH_SIZE / SEQ_LEN ))
 ## Another termination condition in minutes. Set it large enough to avoid
 ## undesired early termination.
 #EXIT_DURATION=30000000
-EXIT_DURATION=480
+EXIT_DURATION=720
 ###############################################################################
 ### LR configs
 ## LR warmup and decay duration, this token-based config is preferable since
@@ -125,7 +125,7 @@ NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 ### MoE configs
 ## Number of experts. EP_SIZE 1 means dense model without MoE
 # EP_SIZE=1
-EP_SIZE=$((2*NUM_GPUS))
+EP_SIZE=$((NUM_GPUS))
 
 if [[ $EP_SIZE -gt $NUM_GPUS ]]; then
     EP_PARALLEL_SIZE=$NUM_GPUS
