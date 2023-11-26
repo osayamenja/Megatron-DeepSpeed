@@ -1,22 +1,11 @@
 #!/bin/bash
 set -ex
-## The links below are invalid due to copyright
-# wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.bin
-# wget https://the-eye.eu/public/AI/pile_neox/data/BookCorpusDataset_text_document.idx
 
 DIR=$(pwd)
 
 if ! test -f "${DIR}/gpt2-vocab.json" || ! test -f "${DIR}/gpt2-merges.txt" ; then
   source "${DIR}/download_vocab.sh"
 fi
-
-#DATASET_FILES_DIR="dataset-test"
-#if ! test -d "${DIR}/${DATASET_FILES_DIR}"; then
-#  mkdir -p ${DATASET_FILES_DIR}
-#fi
-
-# needed for extraction
-apt install zstd
 
 # monology/pile-uncopyrighted from Hugging Face.
 # Below downloads, extracts and preprocesses the train, test and eval datasets
