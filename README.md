@@ -1,6 +1,6 @@
 # Training GPT-3 MoE
 This repo is for ongoing research and experiments on training MoE models from Megatron-Deepspeed. 
-Follow the Steps below to run the scripts.
+Follow the steps below to run the scripts.
 
 # Note
 We assume you are using Linux.
@@ -13,10 +13,10 @@ We assume you are using Linux.
 
 ## Run
 - Download the datasets by running this [script](./dataset/download_books.sh) in the dataset directory.
-- The 125M and 350M MoE scripts are the most up to date and have been tested. 
-- You can run either of `ds_pretrain_gpt_350M_MoE128.sh` or `ds_pretrain_gpt_125M_MoE64.sh`.
-- If you want to run larger models, just update the needed scripts such that the data file paths match either of the above.
-- Ensure to verify `NUM_GPUS` and add any command line switches of interest. See Deepspeed.ai [documentation](https://www.deepspeed.ai/tutorials/mixture-of-experts-nlg/) for more details.
+- The 350M MoE script is the most up to date and have been tested. 
+- Run `ds_pretrain_gpt_350M_MoE128.sh`.
+- If you want to run larger models, just update the needed scripts such that the data file paths match that of the above script.
+- Ensure to add any command line switches of interest. See Deepspeed.ai [documentation](https://www.deepspeed.ai/tutorials/mixture-of-experts-nlg/) for more details.
 
 Below is the original README from Megatron-Deepspeed.
 ------
