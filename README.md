@@ -13,8 +13,7 @@ We assume you are using Linux.
 
 ## Run
 - Download the datasets by running this [script](./dataset/download_books.sh) in the dataset directory.
-- The 350M MoE script is the most up to date and have been tested. 
-- Run `ds_pretrain_gpt_350M_MoE128.sh`.
+- The 350M MoE [script](./examples_deepspeed/MoE/ds_pretrain_gpt_350M_MoE128.sh) is the most up to date and have been tested. 
 - If you want to run larger models, just update the needed scripts such that the data file paths match that of the above script.
 - Ensure to add any command line switches of interest. See Deepspeed.ai [documentation](https://www.deepspeed.ai/tutorials/mixture-of-experts-nlg/) for more details.
 
