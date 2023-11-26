@@ -97,7 +97,7 @@ TRAIN_ITERS=$(( TRAIN_TOKENS * 3 / GLOBAL_BATCH_SIZE / SEQ_LEN ))
 ## Another termination condition in minutes. Set it large enough to avoid
 ## undesired early termination.
 #EXIT_DURATION=30000000
-EXIT_DURATION=720
+EXIT_DURATION=10
 ###############################################################################
 ### LR configs
 ## LR warmup and decay duration, this token-based config is preferable since
@@ -125,7 +125,8 @@ NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 ### MoE configs
 ## Number of experts. EP_SIZE 1 means dense model without MoE
 # EP_SIZE=1
-EP_SIZE=$((NUM_GPUS))
+NNODES="${SLURM_NNODES:-1}"
+EP_SIZE=$((NUM_GPUS*NNODES))
 
 if [[ $EP_SIZE -gt $NUM_GPUS ]]; then
     EP_PARALLEL_SIZE=$NUM_GPUS
@@ -246,9 +247,9 @@ else
 
     # ensure to run download_books.sh to set up the datasets.
     # You can change the URL in that script to download a different dataset
-    TRAIN_DATA_PATH="${DATASET_PATH}/pile_train_text_document"
-    VALID_DATA_PATH="${DATASET_PATH}/pile_val_text_document"
-    TEST_DATA_PATH="${DATASET_PATH}/pile_test_text_document"
+    TRAIN_DATA_PATH="${DATASET_PATH}/pile_uncopyrighted_train_text_document"
+    VALID_DATA_PATH="${DATASET_PATH}/pile_uncopyrighted_val_text_document"
+    TEST_DATA_PATH="${DATASET_PATH}/pile_uncopyrighted_test_text_document"
 fi
 ###############################################################################
 data_options=" \
@@ -351,9 +352,32 @@ deepspeed_options="${deepspeed_options} \
         --deepspeed-activation-checkpointing"
 fi
 
-# Run below if you want the output in a log file
-# run_cmd="deepspeed ${DIR}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options} &> ${OUTPUT_BASEPATH}/log/${NAME}_${host}_${current_time}.log"
-run_cmd="deepspeed ${DIR}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}"
+# As of yet, USE_TORCH_RUN is the only way to run this script in a SLURM environment.
+# See https://github.com/microsoft/DeepSpeed/issues/2025#issuecomment-1157875585
+USE_TORCH_RUN=0
+if [ "${USE_TORCH_RUN}" -eq 1 ]; then
+        if [ -n "${SLURM_JOB_NODELIST}" ]; then
+          IFS='[-,]' read -r -a array <<< "${SLURM_JOB_NODELIST}"
+          MASTER_ADDR="nid${array[1]}"
+          GPUS_PER_NODE=4
+        else
+          MASTER_ADDR="localhost"
+          GPUS_PER_NODE=${NUM_GPUS}
+        fi
+        JOB_ID="${SLURM_JOB_ID:-123456789}"
+        NODE_RANK="${SLURM_PROCID:-0}"
+
+        LAUNCHER="torchrun \
+                  --nproc_per_node=${GPUS_PER_NODE} \
+                  --nnodes=${NNODES} \
+                  --rdzv_endpoint=${MASTER_ADDR} \
+                  --rdzv_backend=c10d \
+                  --rdzv-id=${JOB_ID} \
+                  --node_rank=${NODE_RANK}"
+        run_cmd="${LAUNCHER} ${DIR}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}"
+else
+  run_cmd="deepspeed ${DIR}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}"
+fi
 echo "${run_cmd}"
 eval "${run_cmd}"
 set +x

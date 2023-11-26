@@ -11,7 +11,8 @@ apex/
 
 # tmp files
 *.swp
-examples_deepspeed/MoE/output
+/examples_deepspeed/MoE/output
+*.log
 
 # AML workspace config file
 config.json
@@ -29,3 +30,4 @@ dataset/
 
 venv/
 .idea/
+*.nsys-rep
