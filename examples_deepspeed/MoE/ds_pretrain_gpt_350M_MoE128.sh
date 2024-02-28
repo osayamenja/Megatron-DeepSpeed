@@ -121,7 +121,7 @@ MP_SIZE=1
 ## Currently we don't support PP for MoE. To disable PP, set PP_SIZE
 ## to 1 and use the "--no-pipeline-parallel" arg.
 PP_SIZE=1
-#NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 NUM_GPUS=2
 ###############################################################################
 ### MoE configs
