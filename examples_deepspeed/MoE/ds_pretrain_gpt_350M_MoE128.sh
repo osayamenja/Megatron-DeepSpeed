@@ -84,7 +84,8 @@ GLOBAL_BATCH_SIZE=256
 ### Training duration configs
 ## The main termination condition, original GPT-3 paper trains for 300B tokens
 ## For MoE model, we found sometimes training a bit more to 330B tokens helps
-TRAIN_TOKENS=300000000000
+#TRAIN_TOKENS=300000000000
+TRAIN_TOKENS=300000000
 # TRAIN_TOKENS=330000000000
 
 ## TRAIN_ITERS is another termination condition and also affect the number of 
@@ -96,8 +97,8 @@ TRAIN_ITERS=$(( TRAIN_TOKENS * 3 / GLOBAL_BATCH_SIZE / SEQ_LEN ))
 
 ## Another termination condition in minutes. Set it large enough to avoid
 ## undesired early termination.
-#EXIT_DURATION=30000000
-EXIT_DURATION=10
+EXIT_DURATION=30000000
+# EXIT_DURATION=10
 ###############################################################################
 ### LR configs
 ## LR warmup and decay duration, this token-based config is preferable since
@@ -120,7 +121,8 @@ MP_SIZE=1
 ## Currently we don't support PP for MoE. To disable PP, set PP_SIZE
 ## to 1 and use the "--no-pipeline-parallel" arg.
 PP_SIZE=1
-NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+#NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+NUM_GPUS=2
 ###############################################################################
 ### MoE configs
 ## Number of experts. EP_SIZE 1 means dense model without MoE
@@ -247,17 +249,18 @@ else
 
     # ensure to run download_books.sh to set up the datasets.
     # You can change the URL in that script to download a different dataset
-    TRAIN_DATA_PATH="${DATASET_PATH}/pile_uncopyrighted_train_text_document"
-    VALID_DATA_PATH="${DATASET_PATH}/pile_uncopyrighted_val_text_document"
-    TEST_DATA_PATH="${DATASET_PATH}/pile_uncopyrighted_test_text_document"
+    TRAIN_DATA_PATH="${DATASET_PATH}/c4-train.00000-of-01024_text_document"
 fi
 ###############################################################################
+#--valid-data-path ${TRAIN_DATA_PATH} \
+#--valid-data-path ${VALID_DATA_PATH} \
+ #         --test-data-path ${TEST_DATA_PATH} \
+ # VALID_DATA_PATH="${DATASET_PATH}/pile_uncopyrighted_val_text_document"
+    #    TEST_DATA_PATH="${DATASET_PATH}/pile_uncopyrighted_test_text_document"
 data_options=" \
          --vocab-file ${VOCAB_PATH} \
          --merge-file ${MERGE_PATH} \
-         --train-data-path ${TRAIN_DATA_PATH} \
-         --valid-data-path ${VALID_DATA_PATH} \
-         --test-data-path ${TEST_DATA_PATH} \
+         --data-path ${TRAIN_DATA_PATH} \
          --data-impl mmap"
         
 megatron_options=" \

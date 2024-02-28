@@ -28,6 +28,7 @@ dataset/
 !dataset/*.sh
 !dataset/*.MD
 
-venv/
+*venv/
+cutlass/
 .idea/
 *.nsys-rep
