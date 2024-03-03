@@ -122,13 +122,14 @@ MP_SIZE=1
 ## to 1 and use the "--no-pipeline-parallel" arg.
 PP_SIZE=1
 NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-NUM_GPUS=2
+GPUS_PER_NODE=$NUM_GPUS
 ###############################################################################
 ### MoE configs
 ## Number of experts. EP_SIZE 1 means dense model without MoE
 # EP_SIZE=1
 NNODES="${SLURM_NNODES:-1}"
-EP_SIZE=$((NUM_GPUS*NNODES))
+NUM_GPUS=$((NUM_GPUS*NNODES))
+EP_SIZE=$NUM_GPUS
 
 if [[ $EP_SIZE -gt $NUM_GPUS ]]; then
     EP_PARALLEL_SIZE=$NUM_GPUS
@@ -136,6 +137,7 @@ else
     EP_PARALLEL_SIZE=$EP_SIZE
 fi
 
+EP_PARALLEL_SIZE=8
 ## Original GPT-3 model always set min LR at 10% of max LR. For MoE model, we
 ## found that lower LR and min LR (than the base dense model) helps.
 ## For 1.3B MoE-128 model we used LR=1.2e-4 and MIN_LR=1.0e-6.
@@ -357,15 +359,13 @@ fi
 
 # As of yet, USE_TORCH_RUN is the only way to run this script in a SLURM environment.
 # See https://github.com/microsoft/DeepSpeed/issues/2025#issuecomment-1157875585
-USE_TORCH_RUN=0
+USE_TORCH_RUN=1
 if [ "${USE_TORCH_RUN}" -eq 1 ]; then
         if [ -n "${SLURM_JOB_NODELIST}" ]; then
           IFS='[-,]' read -r -a array <<< "${SLURM_JOB_NODELIST}"
           MASTER_ADDR="nid${array[1]}"
-          GPUS_PER_NODE=4
         else
           MASTER_ADDR="localhost"
-          GPUS_PER_NODE=${NUM_GPUS}
         fi
         JOB_ID="${SLURM_JOB_ID:-123456789}"
         NODE_RANK="${SLURM_PROCID:-0}"
@@ -375,9 +375,10 @@ if [ "${USE_TORCH_RUN}" -eq 1 ]; then
                   --nnodes=${NNODES} \
                   --rdzv_endpoint=${MASTER_ADDR} \
                   --rdzv_backend=c10d \
-                  --rdzv-id=${JOB_ID} \
+                  --rdzv_id=${JOB_ID} \
                   --node_rank=${NODE_RANK}"
         run_cmd="${LAUNCHER} ${DIR}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}"
+	echo ">>>>>EP_SIZE IS ${EP_SIZE}.${EP_PARALLEL_SIZE}"
 else
   run_cmd="deepspeed ${DIR}/../../pretrain_gpt.py ${megatron_options} ${data_options} ${deepspeed_options}"
 fi
