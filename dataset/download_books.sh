@@ -11,7 +11,7 @@ fi
 # Below downloads, extracts and preprocesses the datasets
 
 dataset_names=("c4-train.00000-of-01024.json")
-output_file_names=("c4-train.00000-of-01024.json")
+output_file_names=("c4-train.00000-of-01024")
 
 for i in "${!dataset_names[@]}"; do
   URL_KEY=${dataset_names[$i]}
@@ -45,5 +45,4 @@ for i in "${!dataset_names[@]}"; do
        --workers ${WORKERS} \
        --append-eod"
   eval "${run_cmd}"
-  rm "${dataset_names[$i]}.zst" # remove unneeded file
 done

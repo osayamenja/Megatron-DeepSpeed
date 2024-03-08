@@ -8,6 +8,7 @@ Since this work involves careful profiling of GPU processes, we therefore discou
 abstraction layer may induce inexplicable interference with measured results.
 
 ## Setup
+- Ensure you have the CUDA toolkit installed.
 - Create a `venv`. **This is necessary for downloading apex.**
 - Go to [NVIDIA/apex](https://github.com/NVIDIA/apex#linux) and follow those instructions to download apex.
 - Run `pip install -r ./requirements.txt`
