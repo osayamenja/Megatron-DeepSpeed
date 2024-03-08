@@ -3,19 +3,51 @@ This repo is for ongoing research and experiments on training MoE models from Me
 Follow the steps below to run the scripts.
 
 # Note
-We assume you are using Linux.
+We assume you are using Linux. 
+Since this work involves careful profiling of GPU processes, we therefore discourage using a Docker container as its 
+abstraction layer may induce inexplicable interference with measured results.
 
 ## Setup
 - Create a `venv`. **This is necessary for downloading apex.**
 - Go to [NVIDIA/apex](https://github.com/NVIDIA/apex#linux) and follow those instructions to download apex.
 - Run `pip install -r ./requirements.txt`
-- Due to this [bug](https://github.com/Dao-AILab/flash-attention/issues/453), run ` pip install flash-attn --no-build-isolation`
+- Install cutlass as directed [here](https://github.com/NVIDIA/cutlass/blob/main/media/docs/quickstart.md).
+- export `CUTLASS_PATH=<installed dir>`
 
 ## Run
-- Download the datasets by running this [script](./dataset/download_books.sh) in the dataset directory.
-- The 350M MoE [script](./examples_deepspeed/MoE/ds_pretrain_gpt_350M_MoE128.sh) is the most up to date and have been tested. 
-- If you want to run larger models, just update the needed scripts such that the data file paths match that of the above script.
-- Ensure to add any command line switches of interest. See Deepspeed.ai [documentation](https://www.deepspeed.ai/tutorials/mixture-of-experts-nlg/) for more details.
+- We use the [C4](https://huggingface.co/datasets/allenai/c4/tree/main) dataset for our experiments. Everything is provided in [here](./dataset). 
+- If you want to use a different dataset, then edit this [script](./dataset/download_books.sh) accordingly.
+- This [script](./examples_deepspeed/MoE/ds_pretrain_gpt_350M_MoE128.sh) is the only one you need. You can change the variables within it to run larger models or scale expert size.
+- Follow the below to run GPT-3 MoE pretraining.
+
+### Perlmutter Prerequisite ONLY
+- Create a `conda` environment as below. Note `labvenv` is the default name of the conda environment, 
+you can change, if needed. If changed, make sure to update the corresponding `activate` command below. 
+
+    ```shell
+    conda env create --file environment.yml
+    ```
+- Load the below into your `~/.bashrc` and run `source ~/.bashrc` afterward. 
+    ```shell
+    module load PrgEnv-nvhpc/8.5.0 nvhpc/23.9 conda/Mambaforge-23.1.0-1 craype-hugepages2G nccl/2.18.3-cu12 && mamba activate labvenv && export CUDA_HOME=$NVHPC_CUDA_HOME
+    export CPATH="${CONDA_PREFIX}/include:$CPATH"
+    export C_INCLUDE_PATH="${CONDA_PREFIX}/include:$C_INCLUDE_PATH"
+    export CPLUS_INCLUDE_PATH="${CONDA_PREFIX}/include:$CPLUS_INCLUDE_PATH"
+    export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${CONDA_PREFIX}/include"
+    export LIBRARY_PATH="${CONDA_PREFIX}/include:$LIBRARY_PATH"
+    export NVCC_PREPEND_FLAGS="-I${CONDA_PREFIX}/include"
+    export CUTLASS_PATH=<path to cutlass dir>
+    ```
+- Go to `SLURM for Multi-Node Multi-GPU` 👇
+
+### SLURM for Multi-Node Multi-GPU
+Set `TORCH_RUN=1` in this [script](./examples_deepspeed/MoE/ds_pretrain_gpt_350M_MoE128.sh) and execute it. That's all!
+
+### Deepspeed Launcher for Single-node
+Set `TORCH_RUN=0` in this [script](./examples_deepspeed/MoE/ds_pretrain_gpt_350M_MoE128.sh) and run it 🚀
+
+### Nsight Systems Profiling
+Go to the README [here](https://github.com/osayamenja/DataCruncher) for more details on our commands.
 
 Below is the original README from Megatron-Deepspeed.
 ------

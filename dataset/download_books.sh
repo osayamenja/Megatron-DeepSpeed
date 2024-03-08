@@ -7,23 +7,18 @@ if ! test -f "${DIR}/gpt2-vocab.json" || ! test -f "${DIR}/gpt2-merges.txt" ; th
   source "${DIR}/download_vocab.sh"
 fi
 
-# monology/pile-uncopyrighted from Hugging Face.
-# Below downloads, extracts and preprocesses the train, test and eval datasets
+# allenai/C4/en from Hugging Face.
+# Below downloads, extracts and preprocesses the datasets
 
-dataset_names=("00.jsonl" "test.jsonl" "val.jsonl")
-output_file_names=("pile_uncopyrighted_train" "pile_uncopyrighted_test" "pile_uncopyrighted_val")
+dataset_names=("c4-train.00000-of-01024.json")
+output_file_names=("c4-train.00000-of-01024.json")
 
 for i in "${!dataset_names[@]}"; do
   URL_KEY=${dataset_names[$i]}
    # prevents recurrent downloads since files are huge.
-  if ! test -f "${DIR}/${dataset_names[$i]}.zst"; then
-
-    if ((i == 0)); then
-      echo "Downloading training dataset..."
-      URL_KEY="train/${dataset_names[$i]}"
-    fi
-    URL_KEY="${URL_KEY}.zst"
-    run_cmd="wget https://huggingface.co/datasets/monology/pile-uncopyrighted/resolve/main/${URL_KEY}"
+  if ! test -f "${DIR}/${dataset_names[$i]}.gz"; then
+    URL_KEY="${URL_KEY}.gz"
+    run_cmd="wget https://huggingface.co/datasets/allenai/c4/resolve/main/en/${URL_KEY}"
     printf "%s\n" "${run_cmd}"
     eval "${run_cmd}"
     printf "Download finished!\n"
@@ -32,7 +27,7 @@ for i in "${!dataset_names[@]}"; do
   # Do only once as it takes time to extract since files are huge.
   if ! test -f "${DIR}/${dataset_names[$i]}"; then
     printf "Extracting...\n"
-    run_cmd="unzstd ${dataset_names[$i]}.zst"
+    run_cmd="gzip -d ${dataset_names[$i]}.gz"
     echo "${run_cmd}"
     eval "${run_cmd}"
   fi
