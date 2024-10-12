@@ -1,3 +1,4 @@
+# Copyright (C) 2024 Habana Labs, Ltd. an Intel Company.
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 """Transformer based language model."""
@@ -256,8 +257,8 @@ class Embedding(MegatronModule):
 
         # Dropout.
         if self.sequence_parallel:
-            # already partition sequence, do not need scatter_to_sequence_parallel_region
-            # embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings)
+            # already partition sequence, do not need scatter_to_sequence_parallel_region ?
+            embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings)
             with tensor_parallel.get_cuda_rng_tracker().fork():
                 embeddings = self.embedding_dropout(embeddings)
         else:
@@ -433,7 +434,7 @@ class TransformerLanguageModel(MegatronModule):
             # partial rotary embeddings, which is better than full rotary
             # Wang and Komatsuzaki et al
             # https://github.com/kingoflolz/mesh-transformer-jax/
-            self.rotary_pos_emb = RotaryEmbedding(rotary_dim)
+            self.rotary_pos_emb = RotaryEmbedding(rotary_dim, theta=args.rope_theta)
 
         # Encoder (usually set to True, False if part of an encoder-decoder
         # architecture and in encoder-only stage).
@@ -518,7 +519,7 @@ class TransformerLanguageModel(MegatronModule):
                 inference_params=None,
                 pooling_sequence_index=0,
                 enc_hidden_states=None, output_enc_hidden=False):
-
+        args = get_args()
         # Encoder embedding.
         if self.pre_process:
             encoder_input = self.embedding(enc_input_ids, enc_position_ids,
@@ -541,7 +542,10 @@ class TransformerLanguageModel(MegatronModule):
                 rotary_pos_emb = \
                     self.rotary_pos_emb(inference_params.max_sequence_len)
             else:
-                rotary_pos_emb = self.rotary_pos_emb(self.seq_length)
+                if args.curriculum_learning_legacy or args.data_efficiency_curriculum_learning:
+                    rotary_pos_emb = self.rotary_pos_emb(args.curriculum_seqlen)
+                else:
+                    rotary_pos_emb = self.rotary_pos_emb(self.seq_length)
 
         # Run encoder.
         if enc_hidden_states is None:

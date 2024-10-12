@@ -13,10 +13,9 @@ from megatron.core import mpu, tensor_parallel
 from megatron.core.enums import ModelType
 from megatron.data.gpt_dataset import build_train_valid_test_datasets
 from megatron.model import GPTModel, GPTModelPipe
-from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb, RotaryEmbedding
 from megatron.training import pretrain
 from megatron.utils import get_ltor_masks_and_position_ids
-from megatron.utils import average_losses_across_data_parallel_group
+from megatron.utils import average_losses_across_data_parallel_group, update_rotary_pos_emb
 from megatron.arguments import core_transformer_config_from_args
 
 import deepspeed
@@ -37,9 +36,15 @@ def model_provider(pre_process=True, post_process=True):
 
     args = get_args()
     config = core_transformer_config_from_args(args)
-    with deepspeed.zero.Init(sequence_data_parallel_group=mpu.get_sequence_data_parallel_group(),
+    if hasattr(mpu, 'get_sequence_data_parallel_group'):
+        dpg = mpu.get_sequence_data_parallel_group()
+    elif hasattr(mpu, 'get_data_parallel_group'):
+        dpg = mpu.get_data_parallel_group()
+    else:
+        dpg = None
+    with deepspeed.zero.Init(data_parallel_group=dpg,
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
-                             config_dict_or_path=args.deepspeed_config,
+                             config_dict_or_path=args.deepspeed_config_dict,
                              enabled=args.zero_stage == 3,
                              mpu=mpu):
         if args.deepspeed and not args.no_pipeline_parallel:
@@ -71,18 +76,7 @@ def model_provider(pre_process=True, post_process=True):
 
             # For prertaining, since sequence length is fixed, cache rotary embedding in args, to avoid communicating around
             if args.use_rotary_position_embeddings:
-                rotary_dim = args.hidden_size // args.num_attention_heads \
-                    if args.kv_channels is None else args.kv_channels
-
-                if args.rotary_percent < 1.0:
-                    rotary_dim = int(rotary_dim * args.rotary_percent)
-
-                # partial rotary embeddings, which is better than full rotary
-                # Wang and Komatsuzaki et al
-                # https://github.com/kingoflolz/mesh-transformer-jax/
-                rotary_pos_emb = RotaryEmbedding(rotary_dim)(args.seq_length).to(
-                    get_accelerator().current_device_name())
-                args.rotary_pos_emb = rotary_pos_emb
+                update_rotary_pos_emb(args.seq_length)
 
         else:
             model = GPTModel(

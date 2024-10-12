@@ -542,10 +542,11 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
         if args.finetune:
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
                 load_module_strict=strict, load_optimizer_states=False,
-                load_lr_scheduler_states=False, load_module_only=True)
+                load_lr_scheduler_states=False, load_module_only=True,
+                tag=args.load_tag)
         else:
             loaded_dir, state_dict = model[0].load_checkpoint(load_dir,
-                load_module_strict=strict)
+                load_module_strict=strict, tag=args.load_tag)
         if loaded_dir is None:
             print_rank_0('WARNING: could not find the metadata file {} '.format(
                 load_dir))
@@ -664,7 +665,6 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
             if 'rng_state' in state_dict:
                 # access rng_state for data parallel rank
                 if args.data_parallel_random_init:
-
                     rng_state = state_dict['rng_state'][mpu.get_data_parallel_rank()]
                 else:
                     rng_state = state_dict['rng_state'][0]
@@ -693,6 +693,28 @@ def load_checkpoint(model, optimizer, opt_param_scheduler, load_arg='load', stri
                          'attempting to load the rng state, '
                          'exiting ...'.format(checkpoint_name))
             sys.exit()
+
+        if args.universal_checkpoint:
+            # TLDR: unique rng is needed for dropout to be really random on TP ranks
+            #
+            # Each tp-rank stores its model-parallel-rng states info.
+            # This is required to e.g. have different dropout patterns on different tp ranks that operate on
+            # slices of attention_probs tensor.
+            #
+            # When loading from universal checkpoint, we use mp_rank_<mp>_model_states.pt checkpoint files
+            # to restore the model-parallel-rng (<mp> is {tp-rank, pp-rank} combination).
+            # However, if the loaded checkpoint mp configuration does not match the current mp configuration,
+            # we can not use it to restore model-parallel-rng info.
+            #
+            # In the case of mp configuration change, we reconfigure the model-parallel-rng states s.t. each
+            # tp-rank will have a unique state. In order to ensure that subsequent loads from universal will
+            # not cause the model-parallel-rng states to be repeated, we add the iteration number to the base seed.
+            ckp_args = state_dict['args']
+            if ((args.tensor_model_parallel_size != ckp_args.tensor_model_parallel_size)
+                    or (args.pipeline_model_parallel_size != ckp_args.pipeline_model_parallel_size)):
+                print_rank_0(' loading universal checkpoint with modified mp configuration '
+                             '-> reconfigure tp seed')
+                tensor_parallel.model_parallel_reconfigure_tp_seed(args.seed + iteration)
 
     # Some utilities want to load a checkpoint without distributed being initialized
     if torch.distributed.is_initialized():

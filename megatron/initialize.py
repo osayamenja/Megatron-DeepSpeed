@@ -1,3 +1,4 @@
+# Copyright (C) 2024 Habana Labs, Ltd. an Intel Company.
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 """Megatron initialization."""
@@ -15,6 +16,8 @@ from megatron import get_adlr_autoresume
 from megatron import get_args
 from megatron import get_tensorboard_writer
 from megatron.core import mpu, tensor_parallel
+from megatron.core.pipeline_parallel.deepspeed_zbh1_engine import _exec_backward_only_pass, _exec_weight_pass
+from megatron.core.pipeline_parallel.deepspeed_zbh1_schedule import BackwardOnlyPass, WeightPass, ZeroBubbleH1Pipeline
 from megatron.arguments import (parse_args, validate_args)
 from megatron.checkpointing import load_args_from_checkpoint
 from megatron.global_vars import set_global_variables
@@ -29,7 +32,7 @@ is_rocm_pytorch = OpBuilder.is_rocm_pytorch()
 
 
 def initialize_megatron(extra_args_provider=None, args_defaults={},
-                        ignore_unknown_args=False, allow_no_cuda=False):
+                        ignore_unknown_args=False, allow_no_cuda=False, external_args={}):
     """Set global variables, initialize distributed, and
     set autoresume and random seeds.
     `allow_no_cuda` should not be set unless using megatron for cpu only 
@@ -44,24 +47,17 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
 
     # Parse arguments
     args = parse_args(extra_args_provider, ignore_unknown_args)
-    # Set input args.
-    for key in args_defaults:
-        # The args_defaults is for those who want to set default value or pass parameters when
-        # calling Python functions. Instead of using arguments passed in from outside the program.
-        if args.rank == 0:
-            print('INFO: overriding default arguments for {key}:{v} \
-                   with {key}:{v2}'.format(key=key, v=getattr(args, key),
-                                           v2=args_defaults[key]),
-                                           flush=True)
-        setattr(args, key, args_defaults[key])
 
+    for key in external_args:
+        if key in args:
+            setattr(args, key, external_args[key])
 
     if args.use_checkpoint_args or args_defaults.get('use_checkpoint_args', False):
         assert args.load is not None, '--use-checkpoints-args requires --load argument'
         load_args_from_checkpoint(args)
 
-    validate_args(args)
-        
+    validate_args(args, args_defaults)
+
     # set global args, build tokenizer, and set adlr-autoresume,
     # tensorboard-writer, and timers.
     set_global_variables(args)
@@ -223,13 +219,21 @@ def _initialize_distributed():
 
             get_accelerator().set_device(device) # only do so when device_count > 0
 
+    if args.enable_zbh1_pipeline:
+        deepspeed.runtime.pipe.schedule.TrainSchedule = ZeroBubbleH1Pipeline
+        deepspeed.runtime.pipe.engine.PipelineEngine._INSTRUCTION_MAP.update(
+            {
+                BackwardOnlyPass: _exec_backward_only_pass,
+                WeightPass: _exec_weight_pass,
+            }
+        )
     # Call the init process
     if args.deepspeed or args.ds_inference:
         deepspeed.init_distributed()
     else:
         if not torch.distributed.is_initialized():
             torch.distributed.init_process_group(
-                backend=args.distributed_backend,
+                backend=get_accelerator().communication_backend_name(),
                 world_size=args.world_size, rank=args.rank,
                 timeout=timedelta(minutes=args.distributed_timeout_minutes))
 
